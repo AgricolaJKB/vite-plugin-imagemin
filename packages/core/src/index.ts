@@ -30,7 +30,7 @@ export default function (options: VitePluginImageMin = {}) {
   let publicDir: string
   let config: ResolvedConfig
 
-  const { disable = false, filter = extRE, verbose = true } = options
+  const { disable = false, filter = extRE, verbose = true, maxSimultaneouslyProcessed = null } = options
 
   if (disable) {
     return {} as any
@@ -96,15 +96,25 @@ export default function (options: VitePluginImageMin = {}) {
         return
       }
 
-      const handles = files.map(async (filePath: string) => {
-        const source = (bundler[filePath] as any).source
-        const content = await processFile(filePath, source)
-        if (content) {
-          ;(bundler[filePath] as any).source = content
+      async function processFilesInBatches(files, batchSize) {
+        let start = 0;
+        while (start < files.length) {
+          console.log(start)
+          const batch = files.slice(start, start + batchSize);
+          const handles = batch.map(async (filePath) => {
+            const source = bundler[filePath].source;
+            const content = await processFile(filePath, source);
+            if (content) {
+              bundler[filePath].source = content;
+            }
+          });
+          await Promise.all(handles);
+          start += batchSize;
         }
-      })
+      }
 
-      await Promise.all(handles)
+      const batchSize = maxSimultaneouslyProcessed || files.length;
+      await processFilesInBatches(files, batchSize);
     },
     async closeBundle() {
       if (publicDir) {
